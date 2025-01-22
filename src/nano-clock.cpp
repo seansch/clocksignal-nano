@@ -7,7 +7,7 @@
 
 const uint32_t clockFrequency = 1000; // Desired clock frequency in Hz
 
-void selectPrescaler(unsigned long clockFrequency);
+void selectPrescaler(unsigned long clockFrequency, uint16_t &prescaler);
 void configureTimer1();
 uint16_t calculateTopValue(unsigned long clockFrequency, uint16_t prescaler);
 void handleTopValueLimits(uint16_t &topValue);
@@ -19,7 +19,7 @@ void setup() {
   uint16_t prescaler = 1;
   uint16_t topValue = 0;
 
-  selectPrescaler(clockFrequency);
+  selectPrescaler(clockFrequency, prescaler);
   topValue = calculateTopValue(clockFrequency, prescaler);
   handleTopValueLimits(topValue);
 
@@ -41,8 +41,7 @@ void loop() {
  * 
  * @param clockFrequency The desired clock frequency in Hz.
  */
-void selectPrescaler(unsigned long clockFrequency) {
-  int prescaler;
+void selectPrescaler(unsigned long clockFrequency, uint16_t &prescaler) {
   // Select appropriate prescaler
   if (clockFrequency > 1000) {
     prescaler = 1; // No prescaling
