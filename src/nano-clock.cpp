@@ -1,10 +1,11 @@
 /*
- * Stable Clock Signal Generator using Timer1 on Arduino Nano
- * Ensures the clock signal is LOW when paused.
+ * Stable Clock Signal Generator with Serial Console Commands
+ * Commands: set [frequency], pause, resume, step, show
  */
 #include <Arduino.h>
 
-const uint32_t clockFrequency = 120; // Desired clock frequency in Hz
+const uint32_t defaultFrequency = 1000; // Default clock frequency in Hz
+uint32_t clockFrequency = defaultFrequency;
 
 volatile bool isPaused = false;       // Tracks if the clock is paused
 volatile bool singleStep = false;     // Tracks if single-step mode is activated
@@ -16,14 +17,16 @@ void configureTimer1();
 uint16_t calculateTopValue(uint32_t clockFrequency, uint16_t prescaler);
 void handleTopValueLimits(uint16_t &topValue);
 uint8_t prescalerToBits(uint16_t prescaler);
+void processSerialCommand();          // Serial command processing
 
 void pauseResumeISR();                // ISR for Pause/Resume Button
 void singleStepISR();                 // ISR for Single-Step Button
 
 void setup() {
+  Serial.begin(9600);
   pinMode(9, OUTPUT); // Pin 9 is connected to Timer1 (OC1A)
-  pinMode(2, INPUT_PULLUP); // Single-Step Button (interrupt pin 3)
-  pinMode(3, INPUT_PULLUP);
+  pinMode(3, INPUT_PULLUP); // Single-Step Button
+  pinMode(2, INPUT_PULLUP); // Pause/Resume Button
 
   configureTimer1();
 
@@ -38,9 +41,13 @@ void setup() {
   // Attach interrupts to buttons
   attachInterrupt(digitalPinToInterrupt(2), pauseResumeISR, FALLING);
   attachInterrupt(digitalPinToInterrupt(3), singleStepISR, FALLING);
+
+  Serial.println("Clock Generator Ready. Type 'help' for commands.");
 }
 
 void loop() {
+  processSerialCommand();
+
   // Manage pause/resume state
   if (isPaused) {
     // Stop the timer
@@ -72,6 +79,55 @@ void loop() {
 
     // Ensure the output pin is LOW after the pulse
     digitalWrite(9, LOW);
+  }
+}
+
+/**
+ * @brief Process serial commands from the console.
+ */
+void processSerialCommand() {
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Remove leading/trailing whitespace
+
+    if (command.startsWith("set ")) {
+      // Set the frequency
+      uint32_t freq = command.substring(4).toInt();
+      if (freq > 0 && freq <= 1000000) {
+        clockFrequency = freq;
+        selectPrescaler(clockFrequency, prescaler);
+        uint16_t topValue = calculateTopValue(clockFrequency, prescaler);
+        handleTopValueLimits(topValue);
+        OCR1A = topValue;
+        Serial.print("Frequency set to ");
+        Serial.print(clockFrequency);
+        Serial.println(" Hz.");
+      } else {
+        Serial.println("Invalid frequency. Must be between 1 and 1,000,000 Hz.");
+      }
+    } else if (command == "pause") {
+      isPaused = true;
+      Serial.println("Clock paused.");
+    } else if (command == "resume") {
+      isPaused = false;
+      Serial.println("Clock resumed.");
+    } else if (command == "step") {
+      singleStep = true;
+      Serial.println("Single pulse triggered.");
+    } else if (command == "show") {
+      Serial.print("Current frequency: ");
+      Serial.print(clockFrequency);
+      Serial.println(" Hz.");
+    } else if (command == "help") {
+      Serial.println("Commands:");
+      Serial.println("  set [frequency] - Set clock frequency in Hz (1 to 1,000,000)");
+      Serial.println("  pause           - Pause the clock");
+      Serial.println("  resume          - Resume the clock");
+      Serial.println("  step            - Generate a single pulse");
+      Serial.println("  show            - Show current frequency");
+    } else {
+      Serial.println("Unknown command. Type 'help' for a list of commands.");
+    }
   }
 }
 
