@@ -4,13 +4,18 @@
  */
 #include <Arduino.h>
 
-const uint32_t defaultFrequency = 1000; // Default clock frequency in Hz
+const uint32_t defaultFrequency = 10; // Default clock frequency in Hz
 uint32_t clockFrequency = defaultFrequency;
 
 volatile bool isPaused = false;       // Tracks if the clock is paused
 volatile bool singleStep = false;     // Tracks if single-step mode is activated
 
 uint16_t prescaler = 1;               // Global variable to store the selected prescaler
+
+// Predefined frequencies for toggling
+const uint32_t frequencies[] = {1, 10, 100, 1000};
+const uint8_t numFrequencies = sizeof(frequencies) / sizeof(frequencies[0]);
+uint8_t currentFrequencyIndex = 1;    // Start with 10 Hz
 
 void selectPrescaler(uint32_t clockFrequency, uint16_t &prescaler);
 void configureTimer1();
@@ -27,6 +32,7 @@ void setup() {
   pinMode(9, OUTPUT); // Pin 9 is connected to Timer1 (OC1A)
   pinMode(3, INPUT_PULLUP); // Single-Step Button
   pinMode(2, INPUT_PULLUP); // Pause/Resume Button
+  pinMode(7, INPUT_PULLUP); // Frequency Toggle Button
 
   configureTimer1();
 
@@ -47,6 +53,27 @@ void setup() {
 
 void loop() {
   processSerialCommand();
+
+  // Manage toggle button for frequency
+  static bool lastToggleButtonState = HIGH; // Tracks the last state of the toggle button
+  bool toggleButtonState = digitalRead(7); // Read the current state of the toggle button
+
+  if (toggleButtonState == LOW && lastToggleButtonState == HIGH) {
+    // Button press detected (falling edge)
+    currentFrequencyIndex = (currentFrequencyIndex + 1) % numFrequencies;
+    clockFrequency = frequencies[currentFrequencyIndex];
+
+    selectPrescaler(clockFrequency, prescaler);
+    uint16_t topValue = calculateTopValue(clockFrequency, prescaler);
+    handleTopValueLimits(topValue);
+    OCR1A = topValue;
+
+    Serial.print("Toggled frequency to ");
+    Serial.print(clockFrequency);
+    Serial.println(" Hz.");
+  }
+
+  lastToggleButtonState = toggleButtonState; // Update the last state
 
   // Manage pause/resume state
   if (isPaused) {
