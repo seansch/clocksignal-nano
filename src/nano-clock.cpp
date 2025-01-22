@@ -4,12 +4,11 @@
  */
 #include <Arduino.h>
 
-
 const uint32_t clockFrequency = 1000; // Desired clock frequency in Hz
 
-void selectPrescaler(unsigned long clockFrequency, uint16_t &prescaler);
+void selectPrescaler(uint32_t clockFrequency, uint16_t &prescaler);
 void configureTimer1();
-uint16_t calculateTopValue(unsigned long clockFrequency, uint16_t prescaler);
+uint16_t calculateTopValue(uint32_t clockFrequency, uint16_t prescaler);
 void handleTopValueLimits(uint16_t &topValue);
 
 void setup() {
@@ -23,7 +22,7 @@ void setup() {
   topValue = calculateTopValue(clockFrequency, prescaler);
   handleTopValueLimits(topValue);
 
-  OCR1A = topValue; // Set the TOP value
+  OCR1A = topValue; // Set the TOP value for Timer1
 
   // Toggle OC1A (Pin 9) on compare match
   TCCR1A |= (1 << COM1A0);
@@ -36,16 +35,18 @@ void loop() {
 /**
  * @brief Selects the appropriate prescaler for Timer1 based on the given clock frequency.
  * 
- * This function configures the Timer1 prescaler to achieve the desired clock frequency.
- * It sets the appropriate bits in the TCCR1B register to configure the prescaler.
+ * Clears prescaler bits before setting the correct value.
  * 
  * @param clockFrequency The desired clock frequency in Hz.
+ * @param prescaler The variable to store the selected prescaler value.
  */
-void selectPrescaler(unsigned long clockFrequency, uint16_t &prescaler) {
-  // Select appropriate prescaler
+void selectPrescaler(uint32_t clockFrequency, uint16_t &prescaler) {
+  // Clear previous prescaler settings
+  TCCR1B &= ~(1 << CS10 | 1 << CS11 | 1 << CS12);
+
   if (clockFrequency > 1000) {
-    prescaler = 1; // No prescaling
-    TCCR1B |= (1 << CS10); // Prescaler = 1
+    prescaler = 1;
+    TCCR1B |= (1 << CS10); // No prescaling
   } else if (clockFrequency > 125) {
     prescaler = 8;
     TCCR1B |= (1 << CS11); // Prescaler = 8
@@ -64,49 +65,42 @@ void selectPrescaler(unsigned long clockFrequency, uint16_t &prescaler) {
 /**
  * @brief Configures Timer1 for CTC (Clear Timer on Compare Match) mode.
  * 
- * This function stops Timer1, clears its control registers, and sets it to CTC mode.
- * CTC mode allows the timer to reset when it reaches a specified value, which is useful
- * for generating precise time intervals.
+ * Stops Timer1, clears its control registers, and sets it to CTC mode.
  */
 void configureTimer1() {
-  // Stop Timer1
+  // Stop Timer1 and clear control registers
   TCCR1A = 0;
   TCCR1B = 0;
 
-  // Configure Timer1 for CTC mode
-  TCCR1B |= (1 << WGM12); // CTC mode
+  // Set Timer1 to CTC mode
+  TCCR1B |= (1 << WGM12);
 }
 
 /**
  * @brief Calculates the TOP value for Timer1 based on the given clock frequency and prescaler.
  * 
- * This function calculates the TOP value that Timer1 should count to in order to achieve the
- * desired clock frequency. The calculation is based on the clock frequency of the microcontroller
- * and the selected prescaler.
+ * Ensures the calculated value stays within 16-bit bounds.
  * 
  * @param clockFrequency The desired clock frequency in Hz.
  * @param prescaler The prescaler value used for Timer1.
  * @return uint16_t The calculated TOP value.
  */
-uint16_t calculateTopValue(unsigned long clockFrequency, uint16_t prescaler) {
-  return (16000000 / (2 * prescaler * clockFrequency)) - 1;
+uint16_t calculateTopValue(uint32_t clockFrequency, uint16_t prescaler) {
+  uint32_t topValue = (16000000 / (2UL * prescaler * clockFrequency)) - 1;
+  return (topValue > 65535) ? 65535 : static_cast<uint16_t>(topValue);
 }
-
 
 /**
  * @brief Handles the limits of the TOP value for Timer1.
  * 
- * This function ensures that the TOP value for Timer1 is within the valid range. If the calculated
- * TOP value is too high or too low, it adjusts the value to be within the acceptable range.
+ * Ensures the value is within the valid range for the timer and adjusts it for edge cases.
  * 
  * @param topValue The calculated TOP value for Timer1.
  */
 void handleTopValueLimits(uint16_t &topValue) {
-  // Handle frequencies above timer limits
-  if (topValue > 65535) {
-    topValue = 65535; // Cap TOP value
-  } else if (topValue < 1) {
-    // If TOP is too small, set the maximum feasible frequency
-    topValue = 1;
+  if (topValue < 1) {
+    topValue = 1; // Minimum valid TOP value
+  } else if (topValue > 65535) {
+    topValue = 65535; // Maximum valid TOP value
   }
 }
